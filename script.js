@@ -18,7 +18,6 @@
     let srtContent = '';
     let downloadName = 'subtitles';
 
-    // ---- interaction: click / keyboard / drag ----
     dropzone.addEventListener('click', () => fileInput.click());
     dropzone.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -75,7 +74,7 @@
                 } catch (err) {
                     showError('Couldn\u2019t read that file: ' + err.message);
                 }
-            }, 320); // brief spin so the reel motion registers on fast parses
+            }, 320);
         };
 
         reader.onerror = () => {
@@ -98,66 +97,41 @@
         let name = (data.name || '').trim();
         downloadName = name || ('cursed_draft_' + Math.random().toString(36).substring(2, 10));
 
-        const fragments = data.extra_info?.subtitle_fragment_info_list || [];
         const rows = [];
+        const textsMap = {};
 
-        for (const fragment of fragments) {
-            const cacheStr = fragment.subtitle_cache_info;
-            if (!cacheStr || !cacheStr.trim()) continue;
+        if (data.materials && data.materials.texts) {
+            data.materials.texts.forEach(t => {
+                let rawText = t.content || "";
+                try {
+                    const parsed = JSON.parse(rawText);
+                    rawText = parsed.text || rawText;
+                } catch (err) { }
 
-            let cacheInfo;
-            try {
-                cacheInfo = JSON.parse(cacheStr);
-            } catch {
-                continue;
-            }
-
-            const sentences = cacheInfo.sentence_list || [];
-            if (!sentences.length) continue;
-            const text = sentences.map(s => s.text).filter(Boolean).join('\n');
-            if (!text) continue;
-
-            rows.push({
-                startMicros: fragment.start_time,
-                endMicros: fragment.end_time,
-                text
+                rawText = rawText.replace(/<[^>]+>/g, '').trim();
+                rawText = rawText.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                rawText = rawText.replace(/\[|\]/g, '');
+                textsMap[t.id] = rawText;
             });
         }
 
-        if (rows.length === 0) {
-            const textsMap = {};
-            if (data.materials && data.materials.texts) {
-                data.materials.texts.forEach(t => {
-                    let rawText = t.content || "";
-                    try {
-                        const parsed = JSON.parse(rawText);
-                        rawText = parsed.text || rawText;
-                    } catch (err) { }
-
-                    rawText = rawText.replace(/<[^>]+>/g, '').trim();
-                    rawText = rawText.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-                    textsMap[t.id] = rawText;
-                });
-            }
-
-            if (data.tracks) {
-                let textSegments = [];
-                data.tracks.forEach(track => {
-                    if (track.type === "text") {
-                        textSegments.push(...track.segments);
-                    }
-                });
-
-                for (const seg of textSegments) {
-                    const text = textsMap[seg.material_id];
-                    if (!text) continue;
-
-                    rows.push({
-                        startMicros: seg.target_timerange.start,
-                        endMicros: seg.target_timerange.start + seg.target_timerange.duration,
-                        text
-                    });
+        if (data.tracks) {
+            let textSegments = [];
+            data.tracks.forEach(track => {
+                if (track.type === "text") {
+                    textSegments.push(...track.segments);
                 }
+            });
+
+            for (const seg of textSegments) {
+                const text = textsMap[seg.material_id];
+                if (!text) continue;
+
+                rows.push({
+                    startMicros: seg.target_timerange.start,
+                    endMicros: seg.target_timerange.start + seg.target_timerange.duration,
+                    text
+                });
             }
         }
 
